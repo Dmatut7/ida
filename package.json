@@ -1,0 +1,24 @@
+{
+  "name": "ida",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Prime Workbench — 伊达. Independent desktop-like workbench for Prime Agent (not OpenAI Codex).",
+  "license": "MIT",
+  "packageManager": "pnpm@10.33.3",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @ida/gateway --filter @ida/web dev",
+    "dev:gateway": "pnpm --filter @ida/gateway dev",
+    "dev:web": "pnpm --filter @ida/web dev",
+    "build": "pnpm -r --if-present build",
+    "start": "pnpm --filter @ida/gateway start",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present typecheck"
+  }
+}

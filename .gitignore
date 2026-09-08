@@ -1,0 +1,16 @@
+node_modules
+dist
+build
+.turbo
+.vite
+coverage
+*.log
+.env
+.env.local
+.env.*.local
+.ida
+.DS_Store
+*.tsbuildinfo
+apps/web/dist
+packages/*/dist
+.pnpm-store
