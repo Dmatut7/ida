@@ -65,10 +65,26 @@ export class MockPrimeAdapter implements PrimeAdapter {
   async steer(message: string): Promise<void> {
     this.emit({ kind: "terminal", stream: "system", text: `[mock] steer: ${message.slice(0, 80)}` });
     if (this.state.isStreaming) {
-      // inject a short note mid-stream on next tick — prompt loop checks abortFlag
       this.emit({ kind: "text_delta", messageId: "steer-note", delta: `\n\n(steered: ${message.slice(0, 60)})\n` });
     } else {
       await this.prompt(message);
+    }
+  }
+
+  async followUp(message: string): Promise<void> {
+    this.emit({ kind: "terminal", stream: "system", text: `[mock] follow_up queued: ${message.slice(0, 80)}` });
+    if (this.state.isStreaming) return;
+    await this.prompt(message);
+  }
+
+  async observe(activeSessionId: string): Promise<void> {
+    this.emit({ kind: "terminal", stream: "system", text: `[mock] observe ${activeSessionId}` });
+    const node = findNode(this.tree, activeSessionId);
+    if (node) {
+      this.emit({
+        kind: "subagent_upsert",
+        node: { ...node, summary: `observing ${node.name}`, status: node.status },
+      });
     }
   }
 
@@ -81,9 +97,9 @@ export class MockPrimeAdapter implements PrimeAdapter {
     this.emit({ kind: "message_start", messageId, role: "assistant" });
 
     const lower = message.toLowerCase();
-    const wantsSub = /subagent|research|parallel|spawn|rlm/.test(lower);
-    const wantsRepl = /repl|python|ipython|cell/.test(lower);
-    const wantsDiff = /diff|patch|edit|refactor|fix/.test(lower);
+    const wantsSub = /subagent|research|parallel|spawn|rlm|子代理|审查|并行|调研|演示|派一个/.test(lower);
+    const wantsRepl = /repl|python|ipython|cell|单元格/.test(lower);
+    const wantsDiff = /diff|patch|edit|refactor|fix|补丁|改代码/.test(lower);
 
     await this.streamThinking(messageId, "Planning with RLM: decompose, spawn specialists if needed, then synthesize.");
 
@@ -285,6 +301,15 @@ export class MockPrimeAdapter implements PrimeAdapter {
   private emit(ev: AdapterEvent): void {
     for (const h of this.handlers) h(ev);
   }
+}
+
+function findNode(root: SubagentNode, id: string): SubagentNode | null {
+  if (root.id === id || root.name === id) return root;
+  for (const child of root.children ?? []) {
+    const hit = findNode(child, id);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 function sleep(ms: number): Promise<void> {

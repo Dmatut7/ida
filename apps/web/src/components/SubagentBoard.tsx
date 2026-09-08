@@ -1,6 +1,12 @@
 import type { SubagentNode } from "@prime-workbench/protocol";
 
-export function SubagentBoard({ tree }: { tree: SubagentNode | null }) {
+export function SubagentBoard({
+  tree,
+  onObserve,
+}: {
+  tree: SubagentNode | null;
+  onObserve?: (id: string) => void;
+}) {
   return (
     <div className="panel">
       <div className="panel-title">
@@ -13,16 +19,24 @@ export function SubagentBoard({ tree }: { tree: SubagentNode | null }) {
             No subagents yet. Ask the agent to spawn research / parallel work.
           </div>
         ) : (
-          <NodeView node={tree} />
+          <NodeView node={tree} onObserve={onObserve} />
         )}
       </div>
     </div>
   );
 }
 
-function NodeView({ node }: { node: SubagentNode }) {
+function NodeView({ node, onObserve }: { node: SubagentNode; onObserve?: (id: string) => void }) {
   return (
-    <div className="sa-node">
+    <div
+      className="sa-node"
+      role="button"
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation();
+        onObserve?.(node.id);
+      }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
         <div className="name">{node.name}</div>
         <span className={`status-pill ${node.status}`}>{node.status}</span>
@@ -35,7 +49,7 @@ function NodeView({ node }: { node: SubagentNode }) {
       {node.children && node.children.length > 0 && (
         <div className="sa-children">
           {node.children.map((c) => (
-            <NodeView key={c.id} node={c} />
+            <NodeView key={c.id} node={c} onObserve={onObserve} />
           ))}
         </div>
       )}

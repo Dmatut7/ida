@@ -34,7 +34,7 @@ function loadEnvFile(): void {
 loadEnvFile();
 
 const PORT = Number(process.env.PORT ?? 8787);
-const HOST = process.env.HOST ?? "0.0.0.0";
+const HOST = process.env.HOST ?? "127.0.0.1";
 const mode = (process.env.PRIME_MODE ?? "mock").toLowerCase();
 
 function createAdapter(): PrimeAdapter {

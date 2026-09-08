@@ -11,10 +11,11 @@ export class GatewaySocket {
 
   constructor(url?: string) {
     const proto = location.protocol === "https:" ? "wss" : "ws";
+    const fromEnv = (import.meta as { env?: { VITE_GATEWAY_URL?: string } }).env?.VITE_GATEWAY_URL;
     this.url =
       url ||
-      (import.meta as any).env?.VITE_GATEWAY_URL ||
-      `${proto}://${location.hostname}:8787/ws`;
+      fromEnv ||
+      `${proto}://${location.host}/ws`;
   }
 
   connect(): void {

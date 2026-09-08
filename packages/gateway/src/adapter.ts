@@ -32,9 +32,11 @@ export interface PrimeAdapter {
   stop(): Promise<void>;
   prompt(message: string, opts?: { streamingBehavior?: "steer" | "followUp" }): Promise<void>;
   steer(message: string): Promise<void>;
+  followUp(message: string): Promise<void>;
   abort(): Promise<void>;
   newSession(): Promise<void>;
   setCwd(cwd: string): Promise<void>;
+  observe(activeSessionId: string): Promise<void>;
   getState(): AdapterState;
   onEvent(handler: (ev: AdapterEvent) => void): () => void;
 }

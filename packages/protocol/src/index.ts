@@ -61,6 +61,7 @@ export type ClientMessage =
   | { type: "hello"; client: "web"; protocolVersion: number }
   | { type: "prompt"; id: string; message: string; streamingBehavior?: "steer" | "followUp" }
   | { type: "steer"; id: string; message: string }
+  | { type: "follow_up"; id: string; message: string }
   | { type: "abort"; id?: string }
   | { type: "new_session"; id?: string }
   | { type: "set_cwd"; cwd: string }

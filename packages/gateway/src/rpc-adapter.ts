@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import { randomUUID } from "node:crypto";
+import type { SubagentNode } from "@prime-workbench/protocol";
 import type { AdapterEvent, AdapterState, PrimeAdapter } from "./adapter.js";
 
 export interface RpcAdapterOptions {
@@ -23,11 +24,30 @@ export class RpcPrimeAdapter implements PrimeAdapter {
   private buffer = "";
   private decoder = new StringDecoder("utf8");
   private currentAssistantId: string | null = null;
+  private tree: SubagentNode = {
+    id: "root",
+    name: "root-agent",
+    role: "prime",
+    status: "idle",
+    parentId: null,
+    depth: 0,
+    summary: "Prime RPC session",
+    children: [],
+  };
 
   constructor(opts: RpcAdapterOptions = {}) {
+    const fromEnv = process.env.PRIME_ARGS ? process.env.PRIME_ARGS.split(/\s+/).filter(Boolean) : [];
+    const args = [...(opts.args ?? (fromEnv.length ? fromEnv : ["--mode", "rpc"]))];
+    if (!args.includes("--mode") && !args.includes("rpc")) {
+      args.unshift("--mode", "rpc");
+    }
+    const sock = process.env.PRIME_DAEMON_SOCKET;
+    if (sock && !args.some((a) => a.includes("daemon-socket"))) {
+      args.push("--daemon-socket", sock);
+    }
     this.opts = {
       bin: opts.bin ?? process.env.PRIME_BIN ?? "prime-agent",
-      args: opts.args ?? (process.env.PRIME_ARGS ? process.env.PRIME_ARGS.split(/\s+/).filter(Boolean) : ["--mode", "rpc", "--no-session"]),
+      args,
       cwd: opts.cwd ?? process.env.PRIME_CWD ?? process.cwd(),
       env: opts.env ?? process.env,
     };
@@ -102,8 +122,18 @@ export class RpcPrimeAdapter implements PrimeAdapter {
     await this.send({ type: "abort", id: randomUUID() });
   }
 
+  async followUp(message: string): Promise<void> {
+    await this.send({ type: "follow_up", id: randomUUID(), message });
+  }
+
+  async observe(activeSessionId: string): Promise<void> {
+    await this.send({ type: "observe", id: randomUUID(), activeSessionId });
+  }
+
   async newSession(): Promise<void> {
     await this.send({ type: "new_session", id: randomUUID() });
+    this.tree = { ...this.tree, children: [], status: "idle", summary: "new session" };
+    this.emit({ kind: "subagent_tree", root: this.tree });
   }
 
   private async send(obj: Record<string, unknown>): Promise<void> {
@@ -190,6 +220,7 @@ export class RpcPrimeAdapter implements PrimeAdapter {
         stream: msg.toolName === "ipython" || msg.toolName === "repl" ? "repl" : "system",
         text: `[tool:${msg.toolName}] start ${JSON.stringify(msg.args).slice(0, 200)}`,
       });
+      this.admitFromTool(msg.toolName, msg.args);
       return;
     }
     if (t === "tool_execution_update") {
@@ -207,15 +238,59 @@ export class RpcPrimeAdapter implements PrimeAdapter {
       return;
     }
     if (t === "observed_session_event") {
-      // Surface observed subagent activity lightly
       this.emit({
         kind: "terminal",
         stream: "system",
         text: `[observe ${msg.activeSessionId}] ${msg.event?.type ?? "?"}`,
         agentId: msg.activeSessionId,
       });
+      this.touchObserved(String(msg.activeSessionId), String(msg.event?.type ?? "event"));
       return;
     }
+    if (t === "observed_session_closed") {
+      this.touchObserved(String(msg.activeSessionId), "closed", "done");
+    }
+  }
+
+  private admitFromTool(toolName: string, args: Record<string, unknown> | undefined): void {
+    const code = String(args?.code ?? args?.command ?? "");
+    const named = [...code.matchAll(/rlm\s*\(\s*(['"`])([\s\S]*?)\1[\s\S]*?name\s*=\s*(['"`])([^'"`]+)\3/g)];
+    const kids: { name: string; task: string }[] = named.map((m) => ({
+      task: m[2] ?? "rlm child",
+      name: m[4] ?? "child",
+    }));
+    if (!kids.length && (/rlm\s*\(/.test(code) || toolName === "rlm")) {
+      kids.push({ name: `child-${(this.tree.children?.length ?? 0) + 1}`, task: "rlm spawn" });
+    }
+    if (!kids.length) return;
+    const existing = new Set((this.tree.children ?? []).map((c) => c.name));
+    const next = [...(this.tree.children ?? [])];
+    for (const kid of kids) {
+      if (existing.has(kid.name)) continue;
+      next.push({
+        id: kid.name,
+        name: kid.name,
+        role: "rlm",
+        status: "running",
+        parentId: this.tree.id,
+        depth: 1,
+        summary: kid.task.slice(0, 160),
+        startedAt: Date.now(),
+      });
+      void this.send({ type: "observe", id: randomUUID(), activeSessionId: kid.name }).catch(() => undefined);
+    }
+    this.tree = { ...this.tree, status: "running", children: next };
+    this.emit({ kind: "subagent_tree", root: this.tree });
+  }
+
+  private touchObserved(id: string, event: string, status?: SubagentNode["status"]): void {
+    const children = (this.tree.children ?? []).map((c) =>
+      c.id === id || c.name === id
+        ? { ...c, status: status ?? "running", summary: event, endedAt: status === "done" ? Date.now() : c.endedAt }
+        : c,
+    );
+    this.tree = { ...this.tree, children };
+    this.emit({ kind: "subagent_tree", root: this.tree });
   }
 
   private emit(ev: AdapterEvent): void {
