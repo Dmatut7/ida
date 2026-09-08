@@ -3,6 +3,7 @@ import { StringDecoder } from "node:string_decoder";
 import { randomUUID } from "node:crypto";
 import type { SubagentNode } from "@prime-workbench/protocol";
 import type { AdapterEvent, AdapterState, PrimeAdapter } from "./adapter.js";
+import { buildPrimeRpcArgs, parseRlmSpawns } from "./rpc-args.js";
 
 export interface RpcAdapterOptions {
   bin?: string;
@@ -36,15 +37,11 @@ export class RpcPrimeAdapter implements PrimeAdapter {
   };
 
   constructor(opts: RpcAdapterOptions = {}) {
-    const fromEnv = process.env.PRIME_ARGS ? process.env.PRIME_ARGS.split(/\s+/).filter(Boolean) : [];
-    const args = [...(opts.args ?? (fromEnv.length ? fromEnv : ["--mode", "rpc"]))];
-    if (!args.includes("--mode") && !args.includes("rpc")) {
-      args.unshift("--mode", "rpc");
-    }
-    const sock = process.env.PRIME_DAEMON_SOCKET;
-    if (sock && !args.some((a) => a.includes("daemon-socket"))) {
-      args.push("--daemon-socket", sock);
-    }
+    const args = buildPrimeRpcArgs({
+      args: opts.args,
+      envArgs: process.env.PRIME_ARGS,
+      daemonSocket: process.env.PRIME_DAEMON_SOCKET,
+    });
     this.opts = {
       bin: opts.bin ?? process.env.PRIME_BIN ?? "prime-agent",
       args,
@@ -238,13 +235,7 @@ export class RpcPrimeAdapter implements PrimeAdapter {
       return;
     }
     if (t === "observed_session_event") {
-      this.emit({
-        kind: "terminal",
-        stream: "system",
-        text: `[observe ${msg.activeSessionId}] ${msg.event?.type ?? "?"}`,
-        agentId: msg.activeSessionId,
-      });
-      this.touchObserved(String(msg.activeSessionId), String(msg.event?.type ?? "event"));
+      this.forwardObserved(String(msg.activeSessionId), msg.event);
       return;
     }
     if (t === "observed_session_closed") {
@@ -252,16 +243,55 @@ export class RpcPrimeAdapter implements PrimeAdapter {
     }
   }
 
-  private admitFromTool(toolName: string, args: Record<string, unknown> | undefined): void {
-    const code = String(args?.code ?? args?.command ?? "");
-    const named = [...code.matchAll(/rlm\s*\(\s*(['"`])([\s\S]*?)\1[\s\S]*?name\s*=\s*(['"`])([^'"`]+)\3/g)];
-    const kids: { name: string; task: string }[] = named.map((m) => ({
-      task: m[2] ?? "rlm child",
-      name: m[4] ?? "child",
-    }));
-    if (!kids.length && (/rlm\s*\(/.test(code) || toolName === "rlm")) {
-      kids.push({ name: `child-${(this.tree.children?.length ?? 0) + 1}`, task: "rlm spawn" });
+  /** Map Prime observe / nested child events onto the live tree + tool stream. */
+  private forwardObserved(activeSessionId: string, event: Record<string, unknown> | undefined): void {
+    const innerType = String(event?.type ?? "event");
+    this.emit({
+      kind: "terminal",
+      stream: "system",
+      text: `[observe ${activeSessionId}] ${innerType}`,
+      agentId: activeSessionId,
+    });
+    this.touchObserved(activeSessionId, innerType);
+    if (!event) return;
+    if (innerType === "tool_execution_start") {
+      this.emit({
+        kind: "tool_start",
+        toolCallId: String(event.toolCallId ?? randomUUID()),
+        toolName: String(event.toolName ?? "tool"),
+        args: (event.args as Record<string, unknown>) ?? {},
+        agentId: activeSessionId,
+      });
+      this.admitFromTool(String(event.toolName ?? ""), event.args as Record<string, unknown>);
     }
+    if (innerType === "tool_execution_update") {
+      const partial =
+        (event.partialResult as { content?: { text?: string }[] } | undefined)?.content
+          ?.map((c) => c.text ?? "")
+          .join("") ?? "";
+      this.emit({ kind: "tool_update", toolCallId: String(event.toolCallId ?? ""), partial });
+    }
+    if (innerType === "tool_execution_end") {
+      const result =
+        (event.result as { content?: { text?: string }[] } | undefined)?.content
+          ?.map((c) => c.text ?? "")
+          .join("") ?? "";
+      this.emit({
+        kind: "tool_end",
+        toolCallId: String(event.toolCallId ?? ""),
+        result,
+        isError: Boolean(event.isError),
+      });
+    }
+    if (innerType === "message_update") {
+      const ame = event.assistantMessageEvent as { type?: string; delta?: string } | undefined;
+      if (ame?.delta) this.touchObserved(activeSessionId, ame.delta.slice(0, 120));
+    }
+    if (innerType === "agent_end") this.touchObserved(activeSessionId, "done", "done");
+  }
+
+  private admitFromTool(toolName: string, args: Record<string, unknown> | undefined): void {
+    const kids = parseRlmSpawns(toolName, args);
     if (!kids.length) return;
     const existing = new Set((this.tree.children ?? []).map((c) => c.name));
     const next = [...(this.tree.children ?? [])];

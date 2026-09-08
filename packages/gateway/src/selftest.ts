@@ -1,6 +1,7 @@
-/** Headless mock E2E: stream, thinking, tools, subagent tree. */
+/** Headless mock E2E + RPC argv / rlm parse checks (no prime-agent required). */
 import { MockPrimeAdapter } from "./mock-adapter.js";
 import type { AdapterEvent } from "./adapter.js";
+import { buildPrimeRpcArgs, parseRlmSpawns } from "./rpc-args.js";
 
 const events: AdapterEvent[] = [];
 const adapter = new MockPrimeAdapter("/tmp/ida-selftest");
@@ -35,3 +36,25 @@ if (failed.length) {
 }
 console.log("[selftest] mock E2E OK", checks);
 console.log("[selftest] children", kids.map((c) => `${c.name}:${c.status}`).join(", "));
+
+const argv = buildPrimeRpcArgs({
+  envArgs: "--mode rpc --no-session",
+  daemonSocket: "/tmp/prime-agent-ida/daemon.sock",
+});
+if (!argv.includes("--mode") || !argv.includes("rpc") || !argv.includes("/tmp/prime-agent-ida/daemon.sock")) {
+  console.error("[selftest] FAIL rpc argv", argv);
+  process.exit(1);
+}
+const framed = `${JSON.stringify({ type: "prompt", message: "hi" })}\n`;
+if (!framed.endsWith("\n") || framed.includes("\r")) {
+  console.error("[selftest] FAIL jsonl frame");
+  process.exit(1);
+}
+const spawned = parseRlmSpawns("ipython", {
+  code: `h = await rlm("review auth", name="auth-reviewer")`,
+});
+if (spawned[0]?.name !== "auth-reviewer") {
+  console.error("[selftest] FAIL rlm parse", spawned);
+  process.exit(1);
+}
+console.log("[selftest] rpc argv/jsonl/rlm parse OK", argv.join(" "));

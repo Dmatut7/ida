@@ -52,7 +52,12 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, mode, voice: process.env.VOICE_MODE ?? "auto" });
+  res.json({
+    ok: true,
+    mode,
+    voice: process.env.VOICE_MODE ?? "auto",
+    daemonSocket: process.env.PRIME_DAEMON_SOCKET || null,
+  });
 });
 
 app.get("/api/config", (_req, res) => {
@@ -61,6 +66,9 @@ app.get("/api/config", (_req, res) => {
     hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY),
     voiceMode: process.env.VOICE_MODE ?? "auto",
     cwd: process.env.PRIME_CWD || process.cwd(),
+    primeBin: process.env.PRIME_BIN || "prime-agent",
+    primeArgs: process.env.PRIME_ARGS || "--mode rpc",
+    daemonSocket: process.env.PRIME_DAEMON_SOCKET || null,
   });
 });
 
