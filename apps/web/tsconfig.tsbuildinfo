@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/CallOverlay.tsx","./src/components/DiffPanel.tsx","./src/components/SubagentBoard.tsx","./src/components/TerminalPanel.tsx","./src/hooks/useGateway.ts","./src/lib/audio.ts","./src/lib/ws.ts"],"version":"5.9.3"}

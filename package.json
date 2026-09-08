@@ -1,0 +1,17 @@
+{
+  "name": "prime-workbench",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Independent desktop/web workbench for Prime Agent",
+  "license": "MIT",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "postinstall": "node scripts/build-libs.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
