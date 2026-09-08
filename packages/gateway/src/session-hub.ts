@@ -105,6 +105,13 @@ export class SessionHub {
           await this.adapter.steer(msg.message);
           this.send(ws, { type: "response", id: msg.id, success: true, command: "steer" });
           break;
+        case "follow_up":
+          await this.adapter.followUp(msg.message);
+          this.send(ws, { type: "response", id: msg.id, success: true, command: "follow_up" });
+          break;
+        case "observe_subagent":
+          await this.adapter.observe(msg.activeSessionId);
+          break;
         case "abort":
           await this.adapter.abort();
           if (msg.id) this.send(ws, { type: "response", id: msg.id, success: true, command: "abort" });

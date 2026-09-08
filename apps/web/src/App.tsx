@@ -15,10 +15,17 @@ export function App() {
     if (gw.state?.cwd && !cwd) setCwd(gw.state.cwd);
   }, [gw.state, cwd]);
 
-  function submit() {
+  function submit(mode: "prompt" | "steer" | "follow_up" = "prompt") {
     const text = draft.trim();
     if (!text) return;
-    gw.prompt(text);
+    const id = crypto.randomUUID();
+    if (mode === "steer" || (mode === "prompt" && gw.state?.isStreaming)) {
+      gw.send({ type: "steer", id, message: text });
+    } else if (mode === "follow_up") {
+      gw.send({ type: "follow_up", id, message: text });
+    } else {
+      gw.prompt(text);
+    }
     setDraft("");
   }
 
@@ -66,7 +73,16 @@ export function App() {
                   interruptible voice call.
                 </div>
                 <div style={{ marginTop: 10, fontSize: 13 }}>
-                  Try: spawn a research subagent and run a REPL cell, or open Call (mock voice works without API key).
+                  Try a demo prompt, or open Call (mock barge-in works without an API key).
+                </div>
+                <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                  <button
+                    className="primary"
+                    onClick={() => gw.prompt("演示子代理：并行审查认证，并 run a REPL cell")}
+                  >
+                    Demo subagents + REPL
+                  </button>
+                  <button onClick={() => gw.prompt("propose a diff / refactor greet.ts")}>Demo diff</button>
                 </div>
               </div>
             )}
@@ -99,8 +115,12 @@ export function App() {
                 <button onClick={() => gw.send({ type: "abort" })} disabled={!gw.state?.isStreaming}>
                   Abort
                 </button>
-                <button className="primary" onClick={submit}>
-                  Send
+                <button onClick={() => submit("follow_up")}>Follow-up</button>
+                <button onClick={() => submit("steer")} disabled={!gw.state?.isStreaming}>
+                  Steer
+                </button>
+                <button className="primary" onClick={() => submit(gw.state?.isStreaming ? "steer" : "prompt")}>
+                  {gw.state?.isStreaming ? "Steer" : "Send"}
                 </button>
               </div>
             </div>
@@ -110,7 +130,10 @@ export function App() {
         </div>
 
         <aside className="right">
-          <SubagentBoard tree={gw.tree} />
+          <SubagentBoard
+            tree={gw.tree}
+            onObserve={(id) => gw.send({ type: "observe_subagent", activeSessionId: id })}
+          />
           <DiffPanel files={gw.diffs} />
         </aside>
       </div>
